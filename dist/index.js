@@ -124,6 +124,17 @@ class List extends Component {
                 prjState.updateListeners();
                 this.projectsRender();
             }
+            else {
+                //get all finished projects
+                const finishedProjects = prjState.projects.filter(prj => prj.status === ProjectStatus.Finished);
+                //display all finished projects
+                this.assignedProjects = finishedProjects;
+                for (const project of finishedProjects) {
+                    project.status = ProjectStatus.Active;
+                }
+                prjState.updateListeners();
+                this.projectsRender();
+            }
         };
         this.assignedProjects = [];
         this.configure();
@@ -154,7 +165,7 @@ class List extends Component {
         else {
             this.element.querySelector('#div1').innerHTML = `<img src="fleches-vers-le-haut.png" width="2%" height="10%">`;
             this.element.querySelector('#div2').innerHTML = `<img src="angle-de-la-fleche-vers-le-haut.png" width="2%" height="10%">`;
-            console.log(this.element.querySelector('#div1').innerHTML);
+            console.log(this.element.querySelector('#div1').addEventListener('click', this.clickHandler));
             console.log(this.element.querySelector('#div2').innerHTML);
         }
     }
