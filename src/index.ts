@@ -10,12 +10,18 @@ interface DragTarget {
 }
 
 enum ProjectStatus {
-    Active,
-    Finished
+    active,
+    finished
+}
+
+//create enum with selected and not selected
+enum ProjectSelected {
+    notSelected,
+    selected
 }
 
 class Project {
-    constructor(public id: string, public title: string, public description: string, public people: number,public status: ProjectStatus) { }
+    constructor(public id: string, public title: string, public description: string, public people: number,public status: ProjectStatus, public selected: ProjectSelected) { }
 }
 
 type Listener<T> = (items: T[]) => void;
@@ -40,7 +46,7 @@ class State extends ListenerState<Project>{
         return this.instance;
     }
     addProject(title: string, desc: string, nums: number) {
-        const newProject = new Project( Math.random().toString(), title, desc, nums, ProjectStatus.Active);
+        const newProject = new Project( Math.random().toString(), title, desc, nums, ProjectStatus.active, ProjectSelected.notSelected);
         this.projects.push(newProject);
         this.updateListeners();
     }
@@ -49,6 +55,7 @@ class State extends ListenerState<Project>{
         const project = this.projects.find(prj => prj.id === projectId);
         if (project && project.status !== newStatus) {
             project.status = newStatus;
+            project.selected = ProjectSelected.notSelected;
             this.updateListeners();
         }
     }
@@ -57,6 +64,22 @@ class State extends ListenerState<Project>{
         for (const listenerFn of this.listeners) {
             listenerFn(this.projects.slice());
         }
+    }
+
+    selectProject(projectId: string) {
+        this.projects = this.projects.map(prj => {
+            console.log(prj.id, projectId);
+            if(prj.id === projectId){
+                if (prj && prj.selected !== ProjectSelected.selected) {
+                    prj.selected = ProjectSelected.selected;
+                }else if (prj && prj.selected !== ProjectSelected.notSelected) {
+                    prj.selected = ProjectSelected.notSelected;
+                }
+            }
+            return prj;
+        });
+        this.updateListeners();
+        console.log(this.projects);
     }
 }
 
@@ -112,23 +135,38 @@ class Item extends Component<HTMLUListElement, HTMLLIElement> implements Draggab
     configure(){
         this.element.addEventListener('dragstart', this.dragStartHandler);
         this.element.addEventListener('dragend', this.dragEndHandler);
+        this.element.addEventListener('click', this.clickSelectedHandler);
+    }
+
+    clickSelectedHandler = (event: Event) => {
+        //get project id
+        prjState.selectProject(this.project.id);
+        this.contentRender();
+
     }
 
     contentRender(){
         this.element.querySelector('h2')!.innerText = this.project.title;
         this.element.querySelector('h3')!.innerText = this.persons + ' assigned';
         this.element.querySelector('p')!.innerText = this.project.description;
+        if(this.project.selected === ProjectSelected.selected){
+            this.element.classList.add('selected');
+        }else if(this.project.selected === ProjectSelected.notSelected){
+            this.element.classList.remove('selected');
+        }
     }
 }
 
 class List extends Component<HTMLDivElement, HTMLElement> implements DragTarget {
     assignedProjects: Project[];
-    constructor(private type: 'active' | 'finished'){
+    constructor(private type: 'active' | 'finished', private selected: 1 | 0) {
         super('list', 'app', false, `${type}-projects`);
         this.assignedProjects = [];
         this.configure();
         this.contentRender();
     }
+
+
     dragOverHandler = (event: DragEvent) => {
         if (event.dataTransfer && event.dataTransfer.types[0] === 'text/plain') {
             event.preventDefault();
@@ -140,7 +178,7 @@ class List extends Component<HTMLDivElement, HTMLElement> implements DragTarget 
         const prjId = event.dataTransfer!.getData('text/plain');
         prjState.moveProject(
             prjId,
-            this.type === 'active' ? ProjectStatus.Active : ProjectStatus.Finished
+            this.type === 'active' ? ProjectStatus.active : ProjectStatus.finished
         );
     }
     dragLeaveHandler = (_: DragEvent) => {
@@ -152,29 +190,50 @@ class List extends Component<HTMLDivElement, HTMLElement> implements DragTarget 
 
         if (this.type === 'active') {
             //get all active projects
-            const activeProjects = prjState.projects.filter(prj => prj.status === ProjectStatus.Active);
+            const activeProjects = prjState.projects.filter(prj => prj.status === ProjectStatus.active);
             //display all active projects
             this.assignedProjects = activeProjects;
 
             for (const project of activeProjects) {
-                project.status = ProjectStatus.Finished;
+                project.status = ProjectStatus.finished;
+                project.selected = ProjectSelected.notSelected;
             }
             prjState.updateListeners();
             this.projectsRender();
 
         }else {
             //get all finished projects
-            const finishedProjects = prjState.projects.filter(prj => prj.status === ProjectStatus.Finished);
+            const finishedProjects = prjState.projects.filter(prj => prj.status === ProjectStatus.finished);
             //display all finished projects
             this.assignedProjects = finishedProjects;
 
             for (const project of finishedProjects) {
-                project.status = ProjectStatus.Active;
+                project.status = ProjectStatus.active;
+                project.selected = ProjectSelected.notSelected;
             }
             prjState.updateListeners();
             this.projectsRender();
         }
 
+    }
+
+    changeSelectedHandler = (event: Event) => {
+        const selectedProjects = prjState.projects.filter(prj => prj.selected === ProjectSelected.selected);
+        this.assignedProjects = selectedProjects;
+        //change status of all selected projects
+        for (const project of selectedProjects) {
+            if (this.type === 'active') {
+                project.status = ProjectStatus.finished;
+                project.selected = ProjectSelected.notSelected;
+
+            }else {
+                project.status = ProjectStatus.active;
+                project.selected = ProjectSelected.notSelected;
+
+            }
+        }
+        prjState.updateListeners();
+        this.projectsRender();
     }
 
     configure(){
@@ -183,7 +242,7 @@ class List extends Component<HTMLDivElement, HTMLElement> implements DragTarget 
         this.element.addEventListener('drop', this.dropHandler);
 
         prjState.addListener((projects: Project[]) => {
-            const relevantProjects = projects.filter(prj => this.type === 'active' ? prj.status === ProjectStatus.Active : prj.status === ProjectStatus.Finished);
+            const relevantProjects = projects.filter(prj => this.type === 'active' ? prj.status === ProjectStatus.active : prj.status === ProjectStatus.finished);
             this.assignedProjects = relevantProjects;
             this.projectsRender();
         })
@@ -198,12 +257,14 @@ class List extends Component<HTMLDivElement, HTMLElement> implements DragTarget 
             this.element.querySelector('#div1')!.innerHTML = `<img src="fleche-vers-le-bas%20(1).png" width="2%" height="10%">`;
             this.element.querySelector('#div2')!.innerHTML = `<img src="fleche-vers-le-bas.png" width="2%" height="10%"> `;
             this.element.querySelector('#div1')!.addEventListener('click', this.clickHandler);
+            this.element.querySelector('#div2')!.addEventListener('click', this.changeSelectedHandler);
             console.log(this.element.querySelector('#div1')!.innerHTML);
             console.log(this.element.querySelector('#div2')!.innerHTML);
         } else {
             this.element.querySelector('#div1')!.innerHTML = `<img src="fleches-vers-le-haut.png" width="2%" height="10%">`;
             this.element.querySelector('#div2')!.innerHTML = `<img src="angle-de-la-fleche-vers-le-haut.png" width="2%" height="10%">`;
-            console.log(this.element.querySelector('#div1')!.addEventListener('click', this.clickHandler));
+            this.element.querySelector('#div1')!.addEventListener('click', this.clickHandler);
+            this.element.querySelector('#div2')!.addEventListener('click', this.changeSelectedHandler);
             console.log(this.element.querySelector('#div2')!.innerHTML);
         }
     }
@@ -247,5 +308,5 @@ class Input extends Component<HTMLDivElement, HTMLFormElement> {
 }
 
 const projInput = new Input();
-const activeList = new List('active');
-const finishedList = new List('finished');
+const activeList = new List('active', 0);
+const finishedList = new List('finished', 0);

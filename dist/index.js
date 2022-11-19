@@ -1,16 +1,23 @@
 "use strict";
 var ProjectStatus;
 (function (ProjectStatus) {
-    ProjectStatus[ProjectStatus["Active"] = 0] = "Active";
-    ProjectStatus[ProjectStatus["Finished"] = 1] = "Finished";
+    ProjectStatus[ProjectStatus["active"] = 0] = "active";
+    ProjectStatus[ProjectStatus["finished"] = 1] = "finished";
 })(ProjectStatus || (ProjectStatus = {}));
+//create enum with selected and not selected
+var ProjectSelected;
+(function (ProjectSelected) {
+    ProjectSelected[ProjectSelected["notSelected"] = 0] = "notSelected";
+    ProjectSelected[ProjectSelected["selected"] = 1] = "selected";
+})(ProjectSelected || (ProjectSelected = {}));
 class Project {
-    constructor(id, title, description, people, status) {
+    constructor(id, title, description, people, status, selected) {
         this.id = id;
         this.title = title;
         this.description = description;
         this.people = people;
         this.status = status;
+        this.selected = selected;
     }
 }
 class ListenerState {
@@ -33,7 +40,7 @@ class State extends ListenerState {
         return this.instance;
     }
     addProject(title, desc, nums) {
-        const newProject = new Project(Math.random().toString(), title, desc, nums, ProjectStatus.Active);
+        const newProject = new Project(Math.random().toString(), title, desc, nums, ProjectStatus.active, ProjectSelected.notSelected);
         this.projects.push(newProject);
         this.updateListeners();
     }
@@ -41,6 +48,7 @@ class State extends ListenerState {
         const project = this.projects.find(prj => prj.id === projectId);
         if (project && project.status !== newStatus) {
             project.status = newStatus;
+            project.selected = ProjectSelected.notSelected;
             this.updateListeners();
         }
     }
@@ -48,6 +56,22 @@ class State extends ListenerState {
         for (const listenerFn of this.listeners) {
             listenerFn(this.projects.slice());
         }
+    }
+    selectProject(projectId) {
+        this.projects = this.projects.map(prj => {
+            console.log(prj.id, projectId);
+            if (prj.id === projectId) {
+                if (prj && prj.selected !== ProjectSelected.selected) {
+                    prj.selected = ProjectSelected.selected;
+                }
+                else if (prj && prj.selected !== ProjectSelected.notSelected) {
+                    prj.selected = ProjectSelected.notSelected;
+                }
+            }
+            return prj;
+        });
+        this.updateListeners();
+        console.log(this.projects);
     }
 }
 const prjState = State.getInstance();
@@ -76,6 +100,11 @@ class Item extends Component {
         this.dragEndHandler = (_) => {
             console.log('DragEnd');
         };
+        this.clickSelectedHandler = (event) => {
+            //get project id
+            prjState.selectProject(this.project.id);
+            this.contentRender();
+        };
         this.project = project;
         this.configure();
         this.contentRender();
@@ -86,17 +115,25 @@ class Item extends Component {
     configure() {
         this.element.addEventListener('dragstart', this.dragStartHandler);
         this.element.addEventListener('dragend', this.dragEndHandler);
+        this.element.addEventListener('click', this.clickSelectedHandler);
     }
     contentRender() {
         this.element.querySelector('h2').innerText = this.project.title;
         this.element.querySelector('h3').innerText = this.persons + ' assigned';
         this.element.querySelector('p').innerText = this.project.description;
+        if (this.project.selected === ProjectSelected.selected) {
+            this.element.classList.add('selected');
+        }
+        else if (this.project.selected === ProjectSelected.notSelected) {
+            this.element.classList.remove('selected');
+        }
     }
 }
 class List extends Component {
-    constructor(type) {
+    constructor(type, selected) {
         super('list', 'app', false, `${type}-projects`);
         this.type = type;
+        this.selected = selected;
         this.dragOverHandler = (event) => {
             if (event.dataTransfer && event.dataTransfer.types[0] === 'text/plain') {
                 event.preventDefault();
@@ -106,7 +143,7 @@ class List extends Component {
         };
         this.dropHandler = (event) => {
             const prjId = event.dataTransfer.getData('text/plain');
-            prjState.moveProject(prjId, this.type === 'active' ? ProjectStatus.Active : ProjectStatus.Finished);
+            prjState.moveProject(prjId, this.type === 'active' ? ProjectStatus.active : ProjectStatus.finished);
         };
         this.dragLeaveHandler = (_) => {
             const listEl = this.element.querySelector('ul');
@@ -115,26 +152,45 @@ class List extends Component {
         this.clickHandler = (event) => {
             if (this.type === 'active') {
                 //get all active projects
-                const activeProjects = prjState.projects.filter(prj => prj.status === ProjectStatus.Active);
+                const activeProjects = prjState.projects.filter(prj => prj.status === ProjectStatus.active);
                 //display all active projects
                 this.assignedProjects = activeProjects;
                 for (const project of activeProjects) {
-                    project.status = ProjectStatus.Finished;
+                    project.status = ProjectStatus.finished;
+                    project.selected = ProjectSelected.notSelected;
                 }
                 prjState.updateListeners();
                 this.projectsRender();
             }
             else {
                 //get all finished projects
-                const finishedProjects = prjState.projects.filter(prj => prj.status === ProjectStatus.Finished);
+                const finishedProjects = prjState.projects.filter(prj => prj.status === ProjectStatus.finished);
                 //display all finished projects
                 this.assignedProjects = finishedProjects;
                 for (const project of finishedProjects) {
-                    project.status = ProjectStatus.Active;
+                    project.status = ProjectStatus.active;
+                    project.selected = ProjectSelected.notSelected;
                 }
                 prjState.updateListeners();
                 this.projectsRender();
             }
+        };
+        this.changeSelectedHandler = (event) => {
+            const selectedProjects = prjState.projects.filter(prj => prj.selected === ProjectSelected.selected);
+            this.assignedProjects = selectedProjects;
+            //change status of all selected projects
+            for (const project of selectedProjects) {
+                if (this.type === 'active') {
+                    project.status = ProjectStatus.finished;
+                    project.selected = ProjectSelected.notSelected;
+                }
+                else {
+                    project.status = ProjectStatus.active;
+                    project.selected = ProjectSelected.notSelected;
+                }
+            }
+            prjState.updateListeners();
+            this.projectsRender();
         };
         this.assignedProjects = [];
         this.configure();
@@ -145,7 +201,7 @@ class List extends Component {
         this.element.addEventListener('dragleave', this.dragLeaveHandler);
         this.element.addEventListener('drop', this.dropHandler);
         prjState.addListener((projects) => {
-            const relevantProjects = projects.filter(prj => this.type === 'active' ? prj.status === ProjectStatus.Active : prj.status === ProjectStatus.Finished);
+            const relevantProjects = projects.filter(prj => this.type === 'active' ? prj.status === ProjectStatus.active : prj.status === ProjectStatus.finished);
             this.assignedProjects = relevantProjects;
             this.projectsRender();
         });
@@ -159,13 +215,15 @@ class List extends Component {
             this.element.querySelector('#div1').innerHTML = `<img src="fleche-vers-le-bas%20(1).png" width="2%" height="10%">`;
             this.element.querySelector('#div2').innerHTML = `<img src="fleche-vers-le-bas.png" width="2%" height="10%"> `;
             this.element.querySelector('#div1').addEventListener('click', this.clickHandler);
+            this.element.querySelector('#div2').addEventListener('click', this.changeSelectedHandler);
             console.log(this.element.querySelector('#div1').innerHTML);
             console.log(this.element.querySelector('#div2').innerHTML);
         }
         else {
             this.element.querySelector('#div1').innerHTML = `<img src="fleches-vers-le-haut.png" width="2%" height="10%">`;
             this.element.querySelector('#div2').innerHTML = `<img src="angle-de-la-fleche-vers-le-haut.png" width="2%" height="10%">`;
-            console.log(this.element.querySelector('#div1').addEventListener('click', this.clickHandler));
+            this.element.querySelector('#div1').addEventListener('click', this.clickHandler);
+            this.element.querySelector('#div2').addEventListener('click', this.changeSelectedHandler);
             console.log(this.element.querySelector('#div2').innerHTML);
         }
     }
@@ -199,5 +257,5 @@ class Input extends Component {
     contentRender() { }
 }
 const projInput = new Input();
-const activeList = new List('active');
-const finishedList = new List('finished');
+const activeList = new List('active', 0);
+const finishedList = new List('finished', 0);
