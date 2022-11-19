@@ -127,3 +127,7 @@ button:active {
     border: 1px solid darkmagenta;
     background: #f7f7f7;
 }
+
+.hidden {
+    display: none;
+}
