@@ -52,6 +52,9 @@ class State extends ListenerState {
             this.updateListeners();
         }
     }
+    getList() {
+        return this.projects;
+    }
     updateListeners() {
         for (const listenerFn of this.listeners) {
             listenerFn(this.projects.slice());
@@ -134,6 +137,10 @@ class List extends Component {
         super('list', 'app', false, `${type}-projects`);
         this.type = type;
         this.selected = selected;
+        this.isResponsive = false;
+        this.widthResponsive = 450;
+        this.arrayData = [];
+        this.arrayDataFiltered = [];
         this.dragOverHandler = (event) => {
             if (event.dataTransfer && event.dataTransfer.types[0] === 'text/plain') {
                 event.preventDefault();
@@ -200,10 +207,20 @@ class List extends Component {
         this.element.addEventListener('dragover', this.dragOverHandler);
         this.element.addEventListener('dragleave', this.dragLeaveHandler);
         this.element.addEventListener('drop', this.dropHandler);
+        this.isResponsive = this.widthResponsive >= window.innerWidth;
         prjState.addListener((projects) => {
             const relevantProjects = projects.filter(prj => this.type === 'active' ? prj.status === ProjectStatus.active : prj.status === ProjectStatus.finished);
             this.assignedProjects = relevantProjects;
             this.projectsRender();
+        });
+        window.addEventListener('resize', (e) => {
+            let res = this.widthResponsive >= window.innerWidth;
+            if (this.isResponsive !== res) {
+                this.isResponsive = res;
+                this.arrayData = this.isResponsive ? prjState.getList() : prjState.getList().filter((item) => this.type === 'active' ? !item.selected : item.selected);
+                this.arrayDataFiltered = this.arrayData;
+                this.contentRender();
+            }
         });
     }
     contentRender() {
@@ -225,12 +242,39 @@ class List extends Component {
             this.element.querySelector('#div1').addEventListener('click', this.clickHandler);
             this.element.querySelector('#div2').addEventListener('click', this.changeSelectedHandler);
             console.log(this.element.querySelector('#div2').innerHTML);
+            if (!this.isResponsive) {
+                if (this.type === 'active') {
+                    this.element.querySelector('#div1').classList.remove('hidden');
+                    this.element.querySelector('#div2').classList.remove('hidden');
+                    this.element.querySelector('#div1').innerHTML = `<img src="fleche-vers-le-bas%20(1).png" width="2%" height="10%">`;
+                    this.element.querySelector('#div2').innerHTML = `<img src="fleche-vers-le-bas.png" width="2%" height="10%"> `;
+                    this.element.querySelector('#div1').addEventListener('click', this.clickHandler);
+                }
+                else {
+                    this.element.classList.remove('hidden');
+                    this.element.querySelector('#div1').innerHTML = `<img src="fleches-vers-le-haut.png" width="2%" height="10%">`;
+                    this.element.querySelector('#div2').innerHTML = `<img src="angle-de-la-fleche-vers-le-haut.png" width="2%" height="10%">`;
+                }
+            }
+            else {
+                if (this.type === 'active') {
+                    this.element.querySelector('#div1').classList.add('hidden');
+                    this.element.querySelector('#div2').classList.add('hidden');
+                }
+                else {
+                    this.element.classList.add('hidden');
+                }
+                this.element.querySelector('#div1').classList.add('hidden');
+                this.element.querySelector('#div1').addEventListener('click', this.clickHandler);
+            }
         }
     }
     projectsRender() {
         const listEl = document.getElementById(`${this.type}-projects-list`);
         listEl.innerHTML = '';
         for (const prjItem of this.assignedProjects) {
+            // itemResponsive checkbox
+            // item selected
             new Item(this.element.querySelector('ul').id, prjItem);
         }
     }
@@ -254,7 +298,8 @@ class Input extends Component {
             this.peopleElem.value = '';
         });
     }
-    contentRender() { }
+    contentRender() {
+    }
 }
 const projInput = new Input();
 const activeList = new List('active', 0);
