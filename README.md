@@ -23,6 +23,8 @@ Il possède un status et un état de sélection.
 
 La possibilité de changer tous les items ou seulement ceux sélectionnés est présente.
 
+Le drag and drop est également fonctionnel sur la pickList.
+
 A chaque changement de status ou état de selection, l'état du state est modifié.
 
 ## Credits
