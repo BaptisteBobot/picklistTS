@@ -25,7 +25,7 @@ La possibilité de changer tous les items ou seulement ceux sélectionnés est p
 
 A chaque changement de status ou état de selection, l'état du state est modifié.
 
-##Credits
+## Credits
 
 Merci à Ludivine pour les cours sur le typeScript, sans ça nous n'aurions pas pu mener à bien ce projet.
 
