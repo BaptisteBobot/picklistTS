@@ -24,8 +24,6 @@ enum ProjectSelected {
 }
 
 class Project {
-    selected: boolean;
-
     constructor(public id: string, public title: string, public description: string, public people: number, public status: ProjectStatus, public selected: ProjectSelected) {
     }
 }
@@ -40,8 +38,27 @@ class ListenerState<T> {
     }
 }
 
-class State extends ListenerState<Project> {
-    projects: Project[] = [];
+class Item {
+    id: string;
+    selected: ProjectSelected;
+    status: ProjectStatus
+    data: object;
+    constructor(data: object, index:number, selected : ProjectSelected = ProjectSelected.notSelected, status : ProjectStatus = ProjectStatus.active) {
+        this.data = data;
+        this.id = new Date().getTime().toString();
+        this.id += index;
+        this.selected = selected;
+        this.status = status;
+    }
+
+    changeSelect() {
+        this.selected = this.selected === ProjectSelected.selected ? ProjectSelected.notSelected : ProjectSelected.selected;
+    }
+}
+
+
+class State extends ListenerState<Item> {
+    projects: Item[] = [];
     private static instance: State;
 
     private constructor() {
@@ -53,8 +70,9 @@ class State extends ListenerState<Project> {
         this.instance = new State();
         return this.instance;
     }
-    addProject(title: string, desc: string, nums: number) {
-        const newProject = new Project(Math.random().toString(), title, desc, nums, ProjectStatus.active, ProjectSelected.notSelected);
+
+    addProject(data : object) {
+        const newProject = new Item(data, this.projects.length-1);
         this.projects.push(newProject);
         this.updateListeners();
     }
@@ -80,18 +98,16 @@ class State extends ListenerState<Project> {
 
     selectProject(projectId: string) {
         this.projects = this.projects.map(prj => {
-            console.log(prj.id, projectId);
-            if(prj.id === projectId){
+            if (prj.id === projectId) {
                 if (prj && prj.selected !== ProjectSelected.selected) {
                     prj.selected = ProjectSelected.selected;
-                }else if (prj && prj.selected !== ProjectSelected.notSelected) {
+                } else if (prj && prj.selected !== ProjectSelected.notSelected) {
                     prj.selected = ProjectSelected.notSelected;
                 }
             }
             return prj;
         });
         this.updateListeners();
-        console.log(this.projects);
     }
 }
 
@@ -117,23 +133,28 @@ abstract class Component<T extends HTMLElement, U extends HTMLElement> {
     }
 
     abstract configure(): void;
+
     abstract contentRender(): void;
 }
 
-class Item extends Component<HTMLUListElement, HTMLLIElement> implements Draggable {
-    private project: Project;
+class ItemRender extends Component<HTMLUListElement, HTMLLIElement> implements Draggable {
+    private project: Item;
+    private isResponsive: boolean;
+    private arrayLabel: string[][]
+    // get persons() {
+    //     return this.project.people === 1 ? '1 person' : `${this.project.people} persons`;
+    // }
 
-    get persons() {
-        return this.project.people === 1 ? '1 person' : `${this.project.people} persons`;
-    }
-
-    constructor(hostId: string, project: Project) {
-        super('single', hostId, false, project.id);
+    constructor(hostId: string, project: Item, arrayLabel : string[][]) {
+        super(hostId === 'list-responsive' ? 'single-responsive' : 'single', hostId, false, hostId === "list-responsive" ? `item-responsive-${project.id}` : `item-${project.id}`);
         this.project = project;
-
+        this.isResponsive = hostId === 'list-responsive';
+        this.arrayLabel = arrayLabel;
         this.configure();
         this.contentRender();
     }
+
+
 
     dragStartHandler = (event: DragEvent) => {
         event.dataTransfer!.setData('text/plain', this.project.id);
@@ -141,7 +162,6 @@ class Item extends Component<HTMLUListElement, HTMLLIElement> implements Draggab
     }
 
     dragEndHandler = (_: DragEvent) => {
-        console.log('DragEnd');
     }
 
     configure() {
@@ -152,39 +172,46 @@ class Item extends Component<HTMLUListElement, HTMLLIElement> implements Draggab
 
     clickSelectedHandler = (event: Event) => {
         //get project id
-        prjState.selectProject(this.project.id);
-        this.contentRender();
-
-    }
-
-    contentRender() {
-        this.element.querySelector('h2')!.innerText = this.project.title;
-        this.element.querySelector('h3')!.innerText = this.persons + ' assigned';
-        this.element.querySelector('p')!.innerText = this.project.description;
-        if(this.project.selected === ProjectSelected.selected){
-            this.element.classList.add('selected');
-        }else if(this.project.selected === ProjectSelected.notSelected){
-            this.element.classList.remove('selected');
+        if (this.isResponsive) {
+            // change direct sans passer par select
+            this.project.status = this.project.status === ProjectStatus.finished ? ProjectStatus.active : ProjectStatus.finished;
+        } else {
+            prjState.selectProject(this.project.id);
         }
+        this.contentRender();
     }
+
+
+    contentRender(){
+        this.arrayLabel.forEach((item: string[]) => {
+            let valueText = "";
+            let[valeur,classValeur] = item;
+            Object.entries(this.project.data).forEach(([key, value]) => {
+                if (key === valeur) {
+                    valueText = value;
+                }
+            });
+            const itemElem = this.element.querySelector(`.${classValeur}`) as HTMLParagraphElement;
+            itemElem.innerText = valueText;
+        });
+    }
+
 }
 
 class List extends Component<HTMLDivElement, HTMLElement> implements DragTarget {
-    assignedProjects: Project[];
-
+    assignedProjects: Item[];
+    arrayLabel: string[][];
     isResponsive: boolean = false;
 
     widthResponsive: number = 450;
-    arrayData: Project[] = [];
-    arrayDataFiltered: Project[] = [];
 
-    constructor(private type: 'active' | 'finished', private selected: 1 | 0) {
+    constructor(private type: 'active' | 'finished', private selected: 1 | 0, arrayLabel: string[][]) {
         super('list', 'app', false, `${type}-projects`);
         this.assignedProjects = [];
+        this.arrayLabel = arrayLabel
         this.configure();
         this.contentRender();
     }
-
 
 
     dragOverHandler = (event: DragEvent) => {
@@ -205,12 +232,11 @@ class List extends Component<HTMLDivElement, HTMLElement> implements DragTarget 
         const listEl = this.element.querySelector('ul')!;
         listEl.classList.remove('droppable');
     }
-
     clickHandler = (event: Event) => {
 
         if (this.type === 'active') {
             //get all active projects
-            const activeProjects = prjState.projects.filter(prj => prj.status === ProjectStatus.active);
+            const activeProjects = this.isResponsive ? prjState.projects : prjState.projects.filter(prj => prj.status === ProjectStatus.active);
             //display all active projects
             this.assignedProjects = activeProjects;
 
@@ -236,7 +262,6 @@ class List extends Component<HTMLDivElement, HTMLElement> implements DragTarget 
         }
 
     }
-
     changeSelectedHandler = (event: Event) => {
         const selectedProjects = prjState.projects.filter(prj => prj.selected === ProjectSelected.selected);
         this.assignedProjects = selectedProjects;
@@ -246,7 +271,7 @@ class List extends Component<HTMLDivElement, HTMLElement> implements DragTarget 
                 project.status = ProjectStatus.finished;
                 project.selected = ProjectSelected.notSelected;
 
-            }else {
+            } else {
                 project.status = ProjectStatus.active;
                 project.selected = ProjectSelected.notSelected;
 
@@ -262,107 +287,106 @@ class List extends Component<HTMLDivElement, HTMLElement> implements DragTarget 
         this.element.addEventListener('drop', this.dropHandler);
         this.isResponsive = this.widthResponsive >= window.innerWidth;
 
-        prjState.addListener((projects: Project[]) => {
-            const relevantProjects = projects.filter(prj => this.type === 'active' ? prj.status === ProjectStatus.active : prj.status === ProjectStatus.finished);
+        prjState.addListener((projects: Item[]) => {
+            const relevantProjects = projects.filter(prj =>
+                this.type === 'active' ?
+                    prj.status === ProjectStatus.active :
+                    prj.status === ProjectStatus.finished
+            );
             this.assignedProjects = relevantProjects;
-
             this.projectsRender();
         });
         window.addEventListener('resize', (e) => {
             let res = this.widthResponsive >= window.innerWidth;
             if (this.isResponsive !== res) {
                 this.isResponsive = res;
-                this.arrayData = this.isResponsive ? prjState.getList() : prjState.getList().filter((item: Project) => this.type === 'active' ? !item.selected : item.selected);
-                this.arrayDataFiltered = this.arrayData;
+                this.assignedProjects = this.isResponsive ? prjState.projects : prjState.projects.filter(prj =>
+                    this.type === 'active' ?
+                        prj.status === ProjectStatus.active :
+                        prj.status === ProjectStatus.finished
+                );
                 this.contentRender();
             }
         });
     }
 
     contentRender() {
-        const listId = `${this.type}-projects-list`;
+        const listId = this.isResponsive && this.type === 'active' ? 'list-responsive' : `${this.type}-projects-list`;
         this.element.querySelector('ul')!.id = listId;
-        this.element.querySelector('h2')!.innerText = `${this.type.toUpperCase()} PROJECTS`;
-        console.log(this.type);
-        if (this.type === 'active') {
-            this.element.querySelector('#div1')!.innerHTML = `<img src="fleche-vers-le-bas%20(1).png" width="2%" height="10%">`;
-            this.element.querySelector('#div2')!.innerHTML = `<img src="fleche-vers-le-bas.png" width="2%" height="10%"> `;
-            this.element.querySelector('#div1')!.addEventListener('click', this.clickHandler);
-            this.element.querySelector('#div2')!.addEventListener('click', this.changeSelectedHandler);
-            console.log(this.element.querySelector('#div1')!.innerHTML);
-            console.log(this.element.querySelector('#div2')!.innerHTML);
-        } else {
-            this.element.querySelector('#div1')!.innerHTML = `<img src="fleches-vers-le-haut.png" width="2%" height="10%">`;
-            this.element.querySelector('#div2')!.innerHTML = `<img src="angle-de-la-fleche-vers-le-haut.png" width="2%" height="10%">`;
-            this.element.querySelector('#div1')!.addEventListener('click', this.clickHandler);
-            this.element.querySelector('#div2')!.addEventListener('click', this.changeSelectedHandler);
-            console.log(this.element.querySelector('#div2')!.innerHTML);
+        this.element.querySelector('h2')!.innerText = `PROJECTS`;
+
         if (!this.isResponsive) {
+            this.element.querySelector('h2')!.innerText = `${this.type.toUpperCase()} PROJECTS`;
             if (this.type === 'active') {
-                this.element.querySelector('#div1')!.classList.remove('hidden');
-                this.element.querySelector('#div2')!.classList.remove('hidden');
-                this.element.querySelector('#div1')!.innerHTML = `<img src="fleche-vers-le-bas%20(1).png" width="2%" height="10%">`;
-                this.element.querySelector('#div2')!.innerHTML = `<img src="fleche-vers-le-bas.png" width="2%" height="10%"> `;
-                this.element.querySelector('#div1')!.addEventListener('click', this.clickHandler);
+                this.element.querySelector('.button1')!.classList.remove('hidden');
+                this.element.querySelector('.button2')!.classList.remove('hidden');
+                this.element.querySelector('.button1')!.innerHTML = `<img src="fleche-vers-le-bas%20(1).png" width="2%" height="10%">`;
+                this.element.querySelector('.button2')!.innerHTML = `<img src="fleche-vers-le-bas.png" width="2%" height="10%"> `;
+                this.element.querySelector('.button1')!.addEventListener('click', this.clickHandler);
             } else {
                 this.element!.classList.remove('hidden');
-                this.element.querySelector('#div1')!.innerHTML = `<img src="fleches-vers-le-haut.png" width="2%" height="10%">`;
-                this.element.querySelector('#div2')!.innerHTML = `<img src="angle-de-la-fleche-vers-le-haut.png" width="2%" height="10%">`;
+                this.element.querySelector('.button1')!.innerHTML = `<img src="fleches-vers-le-haut.png" width="2%" height="10%">`;
+                this.element.querySelector('.button2')!.innerHTML = `<img src="angle-de-la-fleche-vers-le-haut.png" width="2%" height="10%">`;
+                this.element.querySelector('.button1')!.addEventListener('click', this.clickHandler);
             }
         } else {
             if (this.type === 'active') {
-                this.element.querySelector('#div1')!.classList.add('hidden');
-                this.element.querySelector('#div2')!.classList.add('hidden');
-
+                this.element.querySelector('.button1')!.classList.add('hidden');
+                this.element.querySelector('.button2')!.classList.add('hidden');
             } else {
                 this.element!.classList.add('hidden');
             }
-            this.element.querySelector('#div1')!.classList.add('hidden');
-            this.element.querySelector('#div1')!.addEventListener('click', this.clickHandler);
+            this.element.querySelector('.button1')!.classList.add('hidden');
+            this.element.querySelector('.button1')!.addEventListener('click', this.clickHandler);
         }
+
+
+        if (this.type === 'active') {
+            this.element.querySelector('.button1')!.innerHTML = `>>`;
+            this.element.querySelector('.button2')!.innerHTML = `>`;
+            this.element.querySelector('.button1')!.addEventListener('click', this.clickHandler);
+            this.element.querySelector('.button2')!.addEventListener('click', this.changeSelectedHandler);
+
+        } else {
+            this.element.querySelector('.button1')!.innerHTML = `<<`;
+            this.element.querySelector('.button2')!.innerHTML = `<`;
+            this.element.querySelector('.button1')!.addEventListener('click', this.clickHandler);
+            this.element.querySelector('.button2')!.addEventListener('click', this.changeSelectedHandler);
+
+        }
+        this.projectsRender();
+
     }
 
     private projectsRender() {
-        const listEl = <HTMLUListElement>document.getElementById(`${this.type}-projects-list`);
+        let stringElement = !this.isResponsive ? `${this.type}-projects-list` : `list-responsive`;
+        const listEl = <HTMLUListElement>document.getElementById(stringElement);
         listEl.innerHTML = '';
         for (const prjItem of this.assignedProjects) {
             // itemResponsive checkbox
             // item selected
-            new Item(this.element.querySelector('ul')!.id, prjItem);
+            new ItemRender(stringElement, prjItem, arrayLabel);
         }
 
     }
 }
 
-class Input extends Component<HTMLDivElement, HTMLFormElement> {
-    titleElem: HTMLInputElement;
-    descElem: HTMLInputElement;
-    peopleElem: HTMLInputElement;
+let arrayLabel = [
+    ["title","title"],
+    ["description","desc"],
+    ["people","people"],
+]
 
-    constructor() {
-        super('project', 'app', true, 'user-input');
-        this.titleElem = <HTMLInputElement>this.element.querySelector('#title');
-        this.descElem = <HTMLInputElement>this.element.querySelector('#description');
-        this.peopleElem = <HTMLInputElement>this.element.querySelector('#people');
-        this.configure();
-    }
+// const projInput = new Input();
+const activeList = new List('active', 0, arrayLabel);
+const finishedList = new List('finished', 0, arrayLabel);
 
-    configure() {
-        this.element.addEventListener('submit', e => {
-            e.preventDefault();
-            let userInput: [string, string, number] = [this.titleElem.value, this.descElem.value, +this.peopleElem.value];
-            const [title, desc, people] = userInput;
-            prjState.addProject(title, desc, people);
-            this.titleElem.value = '';
-            this.descElem.value = '';
-            this.peopleElem.value = '';
-        })
-    }
 
-    contentRender() {
+
+class ProjectTest {
+    constructor(public id:number,public title: string, public description: string, public people: number) {
     }
 }
-
-const projInput = new Input();
-const activeList = new List('active', 0);
-const finishedList = new List('finished', 0);
+for (let i = 0; i < 4; i++) {
+    prjState.addProject(new ProjectTest(i, "test"+i, "soup" + i, i+5));
+}

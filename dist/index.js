@@ -28,6 +28,18 @@ class ListenerState {
         this.listeners.push(listenerFn);
     }
 }
+class Item {
+    constructor(data, index, selected = ProjectSelected.notSelected, status = ProjectStatus.active) {
+        this.data = data;
+        this.id = new Date().getTime().toString();
+        this.id += index;
+        this.selected = selected;
+        this.status = status;
+    }
+    changeSelect() {
+        this.selected = this.selected === ProjectSelected.selected ? ProjectSelected.notSelected : ProjectSelected.selected;
+    }
+}
 class State extends ListenerState {
     constructor() {
         super();
@@ -39,8 +51,8 @@ class State extends ListenerState {
         this.instance = new State();
         return this.instance;
     }
-    addProject(title, desc, nums) {
-        const newProject = new Project(Math.random().toString(), title, desc, nums, ProjectStatus.active, ProjectSelected.notSelected);
+    addProject(data) {
+        const newProject = new Item(data, this.projects.length - 1);
         this.projects.push(newProject);
         this.updateListeners();
     }
@@ -62,7 +74,6 @@ class State extends ListenerState {
     }
     selectProject(projectId) {
         this.projects = this.projects.map(prj => {
-            console.log(prj.id, projectId);
             if (prj.id === projectId) {
                 if (prj && prj.selected !== ProjectSelected.selected) {
                     prj.selected = ProjectSelected.selected;
@@ -74,7 +85,6 @@ class State extends ListenerState {
             return prj;
         });
         this.updateListeners();
-        console.log(this.projects);
     }
 }
 const prjState = State.getInstance();
@@ -93,27 +103,34 @@ class Component {
         this.renderElem.insertAdjacentElement(insert ? 'afterbegin' : 'beforeend', this.element);
     }
 }
-class Item extends Component {
-    constructor(hostId, project) {
-        super('single', hostId, false, project.id);
+class ItemRender extends Component {
+    // get persons() {
+    //     return this.project.people === 1 ? '1 person' : `${this.project.people} persons`;
+    // }
+    constructor(hostId, project, arrayLabel) {
+        super(hostId === 'list-responsive' ? 'single-responsive' : 'single', hostId, false, hostId === "list-responsive" ? `item-responsive-${project.id}` : `item-${project.id}`);
         this.dragStartHandler = (event) => {
             event.dataTransfer.setData('text/plain', this.project.id);
             event.dataTransfer.effectAllowed = 'move';
         };
         this.dragEndHandler = (_) => {
-            console.log('DragEnd');
         };
         this.clickSelectedHandler = (event) => {
             //get project id
-            prjState.selectProject(this.project.id);
+            if (this.isResponsive) {
+                // change direct sans passer par select
+                this.project.status = this.project.status === ProjectStatus.finished ? ProjectStatus.active : ProjectStatus.finished;
+            }
+            else {
+                prjState.selectProject(this.project.id);
+            }
             this.contentRender();
         };
         this.project = project;
+        this.isResponsive = hostId === 'list-responsive';
+        this.arrayLabel = arrayLabel;
         this.configure();
         this.contentRender();
-    }
-    get persons() {
-        return this.project.people === 1 ? '1 person' : `${this.project.people} persons`;
     }
     configure() {
         this.element.addEventListener('dragstart', this.dragStartHandler);
@@ -121,26 +138,26 @@ class Item extends Component {
         this.element.addEventListener('click', this.clickSelectedHandler);
     }
     contentRender() {
-        this.element.querySelector('h2').innerText = this.project.title;
-        this.element.querySelector('h3').innerText = this.persons + ' assigned';
-        this.element.querySelector('p').innerText = this.project.description;
-        if (this.project.selected === ProjectSelected.selected) {
-            this.element.classList.add('selected');
-        }
-        else if (this.project.selected === ProjectSelected.notSelected) {
-            this.element.classList.remove('selected');
-        }
+        this.arrayLabel.forEach((item) => {
+            let valueText = "";
+            let [valeur, classValeur] = item;
+            Object.entries(this.project.data).forEach(([key, value]) => {
+                if (key === valeur) {
+                    valueText = value;
+                }
+            });
+            const itemElem = this.element.querySelector(`.${classValeur}`);
+            itemElem.innerText = valueText;
+        });
     }
 }
 class List extends Component {
-    constructor(type, selected) {
+    constructor(type, selected, arrayLabel) {
         super('list', 'app', false, `${type}-projects`);
         this.type = type;
         this.selected = selected;
         this.isResponsive = false;
         this.widthResponsive = 450;
-        this.arrayData = [];
-        this.arrayDataFiltered = [];
         this.dragOverHandler = (event) => {
             if (event.dataTransfer && event.dataTransfer.types[0] === 'text/plain') {
                 event.preventDefault();
@@ -159,7 +176,7 @@ class List extends Component {
         this.clickHandler = (event) => {
             if (this.type === 'active') {
                 //get all active projects
-                const activeProjects = prjState.projects.filter(prj => prj.status === ProjectStatus.active);
+                const activeProjects = this.isResponsive ? prjState.projects : prjState.projects.filter(prj => prj.status === ProjectStatus.active);
                 //display all active projects
                 this.assignedProjects = activeProjects;
                 for (const project of activeProjects) {
@@ -200,6 +217,7 @@ class List extends Component {
             this.projectsRender();
         };
         this.assignedProjects = [];
+        this.arrayLabel = arrayLabel;
         this.configure();
         this.contentRender();
     }
@@ -209,7 +227,9 @@ class List extends Component {
         this.element.addEventListener('drop', this.dropHandler);
         this.isResponsive = this.widthResponsive >= window.innerWidth;
         prjState.addListener((projects) => {
-            const relevantProjects = projects.filter(prj => this.type === 'active' ? prj.status === ProjectStatus.active : prj.status === ProjectStatus.finished);
+            const relevantProjects = projects.filter(prj => this.type === 'active' ?
+                prj.status === ProjectStatus.active :
+                prj.status === ProjectStatus.finished);
             this.assignedProjects = relevantProjects;
             this.projectsRender();
         });
@@ -217,90 +237,85 @@ class List extends Component {
             let res = this.widthResponsive >= window.innerWidth;
             if (this.isResponsive !== res) {
                 this.isResponsive = res;
-                this.arrayData = this.isResponsive ? prjState.getList() : prjState.getList().filter((item) => this.type === 'active' ? !item.selected : item.selected);
-                this.arrayDataFiltered = this.arrayData;
+                this.assignedProjects = this.isResponsive ? prjState.projects : prjState.projects.filter(prj => this.type === 'active' ?
+                    prj.status === ProjectStatus.active :
+                    prj.status === ProjectStatus.finished);
                 this.contentRender();
             }
         });
     }
     contentRender() {
-        const listId = `${this.type}-projects-list`;
+        const listId = this.isResponsive && this.type === 'active' ? 'list-responsive' : `${this.type}-projects-list`;
         this.element.querySelector('ul').id = listId;
-        this.element.querySelector('h2').innerText = `${this.type.toUpperCase()} PROJECTS`;
-        console.log(this.type);
-        if (this.type === 'active') {
-            this.element.querySelector('#div1').innerHTML = `<img src="fleche-vers-le-bas%20(1).png" width="2%" height="10%">`;
-            this.element.querySelector('#div2').innerHTML = `<img src="fleche-vers-le-bas.png" width="2%" height="10%"> `;
-            this.element.querySelector('#div1').addEventListener('click', this.clickHandler);
-            this.element.querySelector('#div2').addEventListener('click', this.changeSelectedHandler);
-            console.log(this.element.querySelector('#div1').innerHTML);
-            console.log(this.element.querySelector('#div2').innerHTML);
-        }
-        else {
-            this.element.querySelector('#div1').innerHTML = `<img src="fleches-vers-le-haut.png" width="2%" height="10%">`;
-            this.element.querySelector('#div2').innerHTML = `<img src="angle-de-la-fleche-vers-le-haut.png" width="2%" height="10%">`;
-            this.element.querySelector('#div1').addEventListener('click', this.clickHandler);
-            this.element.querySelector('#div2').addEventListener('click', this.changeSelectedHandler);
-            console.log(this.element.querySelector('#div2').innerHTML);
-            if (!this.isResponsive) {
-                if (this.type === 'active') {
-                    this.element.querySelector('#div1').classList.remove('hidden');
-                    this.element.querySelector('#div2').classList.remove('hidden');
-                    this.element.querySelector('#div1').innerHTML = `<img src="fleche-vers-le-bas%20(1).png" width="2%" height="10%">`;
-                    this.element.querySelector('#div2').innerHTML = `<img src="fleche-vers-le-bas.png" width="2%" height="10%"> `;
-                    this.element.querySelector('#div1').addEventListener('click', this.clickHandler);
-                }
-                else {
-                    this.element.classList.remove('hidden');
-                    this.element.querySelector('#div1').innerHTML = `<img src="fleches-vers-le-haut.png" width="2%" height="10%">`;
-                    this.element.querySelector('#div2').innerHTML = `<img src="angle-de-la-fleche-vers-le-haut.png" width="2%" height="10%">`;
-                }
+        this.element.querySelector('h2').innerText = `PROJECTS`;
+        if (!this.isResponsive) {
+            this.element.querySelector('h2').innerText = `${this.type.toUpperCase()} PROJECTS`;
+            if (this.type === 'active') {
+                this.element.querySelector('.button1').classList.remove('hidden');
+                this.element.querySelector('.button2').classList.remove('hidden');
+                this.element.querySelector('.button1').innerHTML = `<img src="fleche-vers-le-bas%20(1).png" width="2%" height="10%">`;
+                this.element.querySelector('.button2').innerHTML = `<img src="fleche-vers-le-bas.png" width="2%" height="10%"> `;
+                this.element.querySelector('.button1').addEventListener('click', this.clickHandler);
             }
             else {
-                if (this.type === 'active') {
-                    this.element.querySelector('#div1').classList.add('hidden');
-                    this.element.querySelector('#div2').classList.add('hidden');
-                }
-                else {
-                    this.element.classList.add('hidden');
-                }
-                this.element.querySelector('#div1').classList.add('hidden');
-                this.element.querySelector('#div1').addEventListener('click', this.clickHandler);
+                this.element.classList.remove('hidden');
+                this.element.querySelector('.button1').innerHTML = `<img src="fleches-vers-le-haut.png" width="2%" height="10%">`;
+                this.element.querySelector('.button2').innerHTML = `<img src="angle-de-la-fleche-vers-le-haut.png" width="2%" height="10%">`;
+                this.element.querySelector('.button1').addEventListener('click', this.clickHandler);
             }
         }
+        else {
+            if (this.type === 'active') {
+                this.element.querySelector('.button1').classList.add('hidden');
+                this.element.querySelector('.button2').classList.add('hidden');
+            }
+            else {
+                this.element.classList.add('hidden');
+            }
+            this.element.querySelector('.button1').classList.add('hidden');
+            this.element.querySelector('.button1').addEventListener('click', this.clickHandler);
+        }
+        if (this.type === 'active') {
+            this.element.querySelector('.button1').innerHTML = `>>`;
+            this.element.querySelector('.button2').innerHTML = `>`;
+            this.element.querySelector('.button1').addEventListener('click', this.clickHandler);
+            this.element.querySelector('.button2').addEventListener('click', this.changeSelectedHandler);
+        }
+        else {
+            this.element.querySelector('.button1').innerHTML = `<<`;
+            this.element.querySelector('.button2').innerHTML = `<`;
+            this.element.querySelector('.button1').addEventListener('click', this.clickHandler);
+            this.element.querySelector('.button2').addEventListener('click', this.changeSelectedHandler);
+        }
+        this.projectsRender();
     }
     projectsRender() {
-        const listEl = document.getElementById(`${this.type}-projects-list`);
+        let stringElement = !this.isResponsive ? `${this.type}-projects-list` : `list-responsive`;
+        const listEl = document.getElementById(stringElement);
         listEl.innerHTML = '';
         for (const prjItem of this.assignedProjects) {
             // itemResponsive checkbox
             // item selected
-            new Item(this.element.querySelector('ul').id, prjItem);
+            new ItemRender(stringElement, prjItem, arrayLabel);
         }
     }
 }
-class Input extends Component {
-    constructor() {
-        super('project', 'app', true, 'user-input');
-        this.titleElem = this.element.querySelector('#title');
-        this.descElem = this.element.querySelector('#description');
-        this.peopleElem = this.element.querySelector('#people');
-        this.configure();
-    }
-    configure() {
-        this.element.addEventListener('submit', e => {
-            e.preventDefault();
-            let userInput = [this.titleElem.value, this.descElem.value, +this.peopleElem.value];
-            const [title, desc, people] = userInput;
-            prjState.addProject(title, desc, people);
-            this.titleElem.value = '';
-            this.descElem.value = '';
-            this.peopleElem.value = '';
-        });
-    }
-    contentRender() {
+let arrayLabel = [
+    ["title", "title"],
+    ["description", "desc"],
+    ["people", "people"],
+];
+// const projInput = new Input();
+const activeList = new List('active', 0, arrayLabel);
+const finishedList = new List('finished', 0, arrayLabel);
+class ProjectTest {
+    constructor(id, title, description, people) {
+        this.id = id;
+        this.title = title;
+        this.description = description;
+        this.people = people;
     }
 }
-const projInput = new Input();
-const activeList = new List('active', 0);
-const finishedList = new List('finished', 0);
+for (let i = 0; i < 4; i++) {
+    prjState.addProject(new ProjectTest(i, "test" + i, "soup" + i, i + 5));
+}
